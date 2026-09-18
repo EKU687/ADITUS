@@ -53,13 +53,21 @@ def charger_sites_refero():
 def envoyer_email_notification(
     destinataire_email, site_nom, demandeur_email, motif_demande
 ):
-    """Envoie une notification par email au valideur via SMTP + STARTTLS (Port 587)."""
+    """Envoie une notification par email au valideur via SSL (Port 465)."""
     try:
-        # Nettoyage et conversion sécurisée du port
-        smtp_server = str(st.secrets["SMTP_SERVER"]).strip()
-        smtp_port = int(str(st.secrets["SMTP_PORT"]).strip())
-        sender_email = str(st.secrets["SMTP_EMAIL"]).strip()
-        sender_password = str(st.secrets["SMTP_PASSWORD"]).strip()
+        # Nettoyage et conversion sécurisée du serveur et du port
+        smtp_server = (
+            str(st.secrets["SMTP_SERVER"]).strip().replace('"', "").replace("'", "")
+        )
+        smtp_port = int(
+            str(st.secrets["SMTP_PORT"]).strip().replace('"', "").replace("'", "")
+        )
+        sender_email = (
+            str(st.secrets["SMTP_EMAIL"]).strip().replace('"', "").replace("'", "")
+        )
+        sender_password = (
+            str(st.secrets["SMTP_PASSWORD"]).strip().replace('"', "").replace("'", "")
+        )
 
         message = MIMEMultipart("alternative")
         message["Subject"] = f"🔔 [GNC-PASS] Nouvelle demande d'accès - Site {site_nom}"
@@ -84,11 +92,8 @@ def envoyer_email_notification(
         """
         message.attach(MIMEText(html_content, "html"))
 
-        # Utilisation de SMTP standard + STARTTLS (Recommandé pour les serveurs Cloud)
-        with smtplib.SMTP(smtp_server, smtp_port, timeout=12) as server:
-            server.ehlo()
-            server.starttls()  # Sécurise la connexion en TLS
-            server.ehlo()
+        # Connexion SSL directe adaptée au port 465 pour Gmail / Google Workspace
+        with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=12) as server:
             server.login(sender_email, sender_password)
             server.sendmail(sender_email, destinataire_email, message.as_string())
 
@@ -112,12 +117,20 @@ def envoyer_email_decision(
     heure_sortie=None,
     motif_refus=None,
 ):
-    """Envoie un e-mail de décision au demandeur via SMTP + STARTTLS (Port 587)."""
+    """Envoie un e-mail de décision au demandeur via SSL (Port 465)."""
     try:
-        smtp_server = str(st.secrets["SMTP_SERVER"]).strip()
-        smtp_port = int(str(st.secrets["SMTP_PORT"]).strip())
-        sender_email = str(st.secrets["SMTP_EMAIL"]).strip()
-        sender_password = str(st.secrets["SMTP_PASSWORD"]).strip()
+        smtp_server = (
+            str(st.secrets["SMTP_SERVER"]).strip().replace('"', "").replace("'", "")
+        )
+        smtp_port = int(
+            str(st.secrets["SMTP_PORT"]).strip().replace('"', "").replace("'", "")
+        )
+        sender_email = (
+            str(st.secrets["SMTP_EMAIL"]).strip().replace('"', "").replace("'", "")
+        )
+        sender_password = (
+            str(st.secrets["SMTP_PASSWORD"]).strip().replace('"', "").replace("'", "")
+        )
 
         message = MIMEMultipart("alternative")
 
@@ -172,10 +185,7 @@ def envoyer_email_decision(
         """
         message.attach(MIMEText(html_content, "html"))
 
-        with smtplib.SMTP(smtp_server, smtp_port, timeout=12) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
+        with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=12) as server:
             server.login(sender_email, sender_password)
             server.sendmail(sender_email, destinataire_email, message.as_string())
 
@@ -505,10 +515,10 @@ with onglet_nouvelle:
                     req_valideur = (
                         supabase.table("Valideurs_sites")
                         .select("valideur_email")
-                        .eq("site_nom", site_choisi)
+                        .eq("site_nom", site_choisi.strip())
                         .execute()
                     )
-                    if len(req_valideur.data) > 0:
+                    if req_valideur.data and len(req_valideur.data) > 0:
                         email_du_valideur = req_valideur.data[0]["valideur_email"]
                     else:
                         email_du_valideur = "admin.acces@gouv.nc"
@@ -650,7 +660,6 @@ with onglet_actifs:
 
         # 1. Vérification du rôle et récupération des demandes selon les privilèges
         if st.session_state.get("is_admin"):
-            # L'Administrateur récupère TOUTES les demandes validées
             reponse_actifs = (
                 supabase.table("Demandes_acces")
                 .select("*")
@@ -659,7 +668,6 @@ with onglet_actifs:
                 .execute()
             )
         else:
-            # L'Agent ne récupère QUE SES PROPRES demandes validées
             reponse_actifs = (
                 supabase.table("Demandes_acces")
                 .select("*")
@@ -677,12 +685,10 @@ with onglet_actifs:
             date_sortie_str = acces.get("date_sortie")
             if date_sortie_str:
                 try:
-                    # Conversion au format date (YYYY-MM-DD)
                     date_sortie_obj = datetime.datetime.strptime(
                         date_sortie_str[:10], "%Y-%m-%d"
                     ).date()
 
-                    # On ne garde la demande que si la date de fin est >= aujourd'hui
                     if date_sortie_obj >= aujourdhui:
                         donnees_actives.append(acces)
                 except ValueError:
@@ -904,22 +910,22 @@ if onglet_admin is not None:
                             verification = (
                                 supabase.table("Valideurs_sites")
                                 .select("*")
-                                .eq("site_nom", site_a_configurer)
+                                .eq("site_nom", site_a_configurer.strip())
                                 .execute()
                             )
 
                             if len(verification.data) > 0:
                                 id_existant = verification.data[0]["id"]
                                 supabase.table("Valideurs_sites").update(
-                                    {"valideur_email": nouvel_email_valideur}
+                                    {"valideur_email": nouvel_email_valideur.strip()}
                                 ).eq("id", id_existant).execute()
                                 st.success(
                                     f"🔄 Mise à jour réussie pour {site_a_configurer} !"
                                 )
                             else:
                                 donnees = {
-                                    "site_nom": site_a_configurer,
-                                    "valideur_email": nouvel_email_valideur,
+                                    "site_nom": site_a_configurer.strip(),
+                                    "valideur_email": nouvel_email_valideur.strip(),
                                 }
                                 supabase.table("Valideurs_sites").insert(
                                     donnees
