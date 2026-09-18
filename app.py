@@ -53,12 +53,13 @@ def charger_sites_refero():
 def envoyer_email_notification(
     destinataire_email, site_nom, demandeur_email, motif_demande
 ):
-    """Envoie une notification par email au valideur via le serveur SMTP Google Workspace / Gmail."""
+    """Envoie une notification par email au valideur via SMTP + STARTTLS (Port 587)."""
     try:
-        smtp_server = st.secrets["SMTP_SERVER"]
-        smtp_port = int(st.secrets["SMTP_PORT"])
-        sender_email = st.secrets["SMTP_EMAIL"]
-        sender_password = st.secrets["SMTP_PASSWORD"]
+        # Nettoyage et conversion sécurisée du port
+        smtp_server = str(st.secrets["SMTP_SERVER"]).strip()
+        smtp_port = int(str(st.secrets["SMTP_PORT"]).strip())
+        sender_email = str(st.secrets["SMTP_EMAIL"]).strip()
+        sender_password = str(st.secrets["SMTP_PASSWORD"]).strip()
 
         message = MIMEMultipart("alternative")
         message["Subject"] = f"🔔 [GNC-PASS] Nouvelle demande d'accès - Site {site_nom}"
@@ -83,7 +84,11 @@ def envoyer_email_notification(
         """
         message.attach(MIMEText(html_content, "html"))
 
-        with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=8) as server:
+        # Utilisation de SMTP standard + STARTTLS (Recommandé pour les serveurs Cloud)
+        with smtplib.SMTP(smtp_server, smtp_port, timeout=12) as server:
+            server.ehlo()
+            server.starttls()  # Sécurise la connexion en TLS
+            server.ehlo()
             server.login(sender_email, sender_password)
             server.sendmail(sender_email, destinataire_email, message.as_string())
 
@@ -107,12 +112,12 @@ def envoyer_email_decision(
     heure_sortie=None,
     motif_refus=None,
 ):
-    """Envoie un e-mail de décision (Validation ou Refus) au demandeur d'accès avec le récapitulatif."""
+    """Envoie un e-mail de décision au demandeur via SMTP + STARTTLS (Port 587)."""
     try:
-        smtp_server = st.secrets["SMTP_SERVER"]
-        smtp_port = int(st.secrets["SMTP_PORT"])
-        sender_email = st.secrets["SMTP_EMAIL"]
-        sender_password = st.secrets["SMTP_PASSWORD"]
+        smtp_server = str(st.secrets["SMTP_SERVER"]).strip()
+        smtp_port = int(str(st.secrets["SMTP_PORT"]).strip())
+        sender_email = str(st.secrets["SMTP_EMAIL"]).strip()
+        sender_password = str(st.secrets["SMTP_PASSWORD"]).strip()
 
         message = MIMEMultipart("alternative")
 
@@ -167,7 +172,10 @@ def envoyer_email_decision(
         """
         message.attach(MIMEText(html_content, "html"))
 
-        with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=8) as server:
+        with smtplib.SMTP(smtp_server, smtp_port, timeout=12) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
             server.login(sender_email, sender_password)
             server.sendmail(sender_email, destinataire_email, message.as_string())
 
