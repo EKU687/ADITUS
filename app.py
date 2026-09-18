@@ -638,24 +638,49 @@ with onglet_actifs:
 
     try:
         email_session = st.session_state.get("user_email")
-        today_str = datetime.date.today().strftime("%Y-%m-%d")
+        aujourdhui = datetime.date.today()
 
-        # Requête Supabase : Filtrage par statut, par utilisateur et par date de fin
-        query = (
-            supabase.table("Demandes_acces")
-            .select("*")
-            .eq("statut", "Validé")
-            .gte("date_sortie", today_str)
-            .order("id", desc=True)
-        )
+        # 1. Vérification du rôle et récupération des demandes selon les privilèges
+        if st.session_state.get("is_admin"):
+            # L'Administrateur récupère TOUTES les demandes validées
+            reponse_actifs = (
+                supabase.table("Demandes_acces")
+                .select("*")
+                .eq("statut", "Validé")
+                .order("id", desc=True)
+                .execute()
+            )
+        else:
+            # L'Agent ne récupère QUE SES PROPRES demandes validées
+            reponse_actifs = (
+                supabase.table("Demandes_acces")
+                .select("*")
+                .eq("statut", "Validé")
+                .eq("email_demandeur", email_session)
+                .order("id", desc=True)
+                .execute()
+            )
 
-        # Si ce n'est pas un admin, on restreint à ses propres accès
-        if not st.session_state.get("is_admin"):
-            query = query.eq("email_demandeur", email_session)
+        donnees_brutes = reponse_actifs.data or []
+        donnees_actives = []
 
-        reponse_actifs = query.execute()
-        donnees_actives = reponse_actifs.data
+        # 2. Filtrage Python strict pour éliminer les accès dont la date de sortie est dépassée
+        for acces in donnees_brutes:
+            date_sortie_str = acces.get("date_sortie")
+            if date_sortie_str:
+                try:
+                    # Conversion au format date (YYYY-MM-DD)
+                    date_sortie_obj = datetime.datetime.strptime(
+                        date_sortie_str[:10], "%Y-%m-%d"
+                    ).date()
 
+                    # On ne garde la demande que si la date de fin est >= aujourd'hui
+                    if date_sortie_obj >= aujourdhui:
+                        donnees_actives.append(acces)
+                except ValueError:
+                    continue
+
+        # 3. Affichage des cartes d'accès
         if not donnees_actives:
             st.warning("Vous n'avez actuellement aucun accès actif sur un site GNC.")
         else:
