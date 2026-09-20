@@ -26,10 +26,9 @@ def init_supabase_client(use_service_role: bool = False) -> Client:
 
     # Configuration personnalisée du client HTTPX pour gérer les latences réseau
     custom_options = ClientOptions(
-        post_grest_client_timeout=HTTP_TIMEOUT_SECONDS,
+        postgrest_client_timeout=HTTP_TIMEOUT_SECONDS,
         storage_client_timeout=HTTP_TIMEOUT_SECONDS,
     )
-
     return create_client(SUPABASE_URL, key, options=custom_options)
 
 
