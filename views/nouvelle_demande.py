@@ -24,22 +24,23 @@ def _formater_date_fr(valeur) -> str:
 
 
 def charger_liste_sites() -> list:
-    """Récupère la liste dynamique des sites directement depuis la table 'Sites'."""
+    """Récupère la liste dynamique des sites actifs depuis la table 'Sites'."""
     try:
-        req = supabase.table("Sites").select("*").execute()
-        if req.data:
-            # Récupère 'nom' ou 'site_id' selon la colonne présente dans la table Sites
-            sites = [
-                row.get("nom") or row.get("site_id") or row.get("libelle")
-                for row in req.data
-            ]
-            sites_propres = sorted(list(set([s for s in sites if s])))
-            if sites_propres:
-                return sites_propres
-    except Exception as e:
-        st.warning(f"⚠️ Impossible de charger la table Sites : {e}")
+        req = (
+            supabase.table("Sites")
+            .select("nom_site")
+            .eq("actif", True)
+            .order("nom_site", desc=False)
+            .execute()
+        )
 
-    # Fallback de sécurité si la table Sites est vide ou inaccessible
+        if req.data:
+            sites = [row["nom_site"] for row in req.data if row.get("nom_site")]
+            if sites:
+                return sites
+    except Exception as e:
+        st.warning(f"⚠️ Erreur lors de la lecture de la table 'Sites' : {e}")
+
     return ["DINUM", "DOUMER", "HABITAT", "OUEMO", "AUTRE"]
 
 
