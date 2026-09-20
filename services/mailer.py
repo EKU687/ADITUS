@@ -187,3 +187,21 @@ def envoyer_email_decision(
             f"⚠️ La décision a été enregistrée, mais l'e-mail n'a pas pu être envoyé : {e}"
         )
         return False
+
+
+def obtenir_email_valideur_site(site_nom: str) -> str:
+    """Consulte la table Valideurs_sites pour trouver l'e-mail du responsable du site."""
+    try:
+        from services.db import supabase
+
+        req = (
+            supabase.table("Valideurs_sites")
+            .select("valideur_email")
+            .eq("site_nom", site_nom)
+            .execute()
+        )
+        if req.data and len(req.data) > 0:
+            return req.data[0].get("valideur_email")
+    except Exception:
+        pass
+    return "eric.kuter@gouv.nc"  # Fallback si non trouvé

@@ -7,22 +7,51 @@ import httpx
 import streamlit as st
 from services.db import supabase
 
+# Liste des e-mails administrateurs principaux par défaut
+ADMINS_SYSTEME = ["eric.kuter@gouv.nc"]
+
 
 def verifier_roles_utilisateur(email: str):
     """Consulte la base pour déterminer si l'utilisateur est admin ou valideur."""
+    if not email:
+        return False, False
+
+    email_clean = email.strip().lower()
+
+    # Si c'est l'administrateur principal
+    if email_clean in ADMINS_SYSTEME:
+        return True, True
+
     try:
+        # Vérification dans la table Utilisateurs ou Valideurs
         req = (
             supabase.table("Utilisateurs")
             .select("role")
-            .eq("email", email.lower())
+            .ilike("email", email_clean)
             .execute()
         )
+
         if req.data and len(req.data) > 0:
-            role = req.data[0].get("role", "Demandeur")
-            return (role == "Administrateur"), (role in ["Valideur", "Administrateur"])
-        return False, False
-    except Exception:
-        return False, False
+            role_db = str(req.data[0].get("role", "")).strip().lower()
+            est_admin = role_db in ["administrateur", "admin"]
+            est_valideur = role_db in ["valideur", "administrateur", "admin"]
+            return est_admin, est_valideur
+
+        # Vérification alternative si l'utilisateur est enregistré comme valideur d'au moins un site
+        req_valideur = (
+            supabase.table("Valideurs_sites")
+            .select("site_id")
+            .ilike("email_valideur", email_clean)
+            .execute()
+        )
+
+        if req_valideur.data and len(req_valideur.data) > 0:
+            return False, True
+
+    except Exception as e:
+        st.warning(f"⚠️ Erreur lors de la vérification des rôles : {e}")
+
+    return False, False
 
 
 def initialiser_session_auth():
@@ -94,7 +123,7 @@ def afficher_ecran_connexion():
 
         else:
             st.subheader("📩 Saisissez votre code")
-            st.info(f"Code transmitted à : **{st.session_state['user_email']}**")
+            st.info(f"Code transmis à : **{st.session_state['user_email']}**")
 
             code_otp = st.text_input(
                 "Code de vérification", max_chars=8, placeholder="12345678"
@@ -118,7 +147,6 @@ def afficher_ecran_connexion():
                             if res.session:
                                 st.session_state["user_authenticated"] = True
                                 st.session_state["user_email"] = res.user.email
-                                supabase.postgrest.auth(res.session.access_token)
 
                                 est_admin, est_valideur = verifier_roles_utilisateur(
                                     res.user.email

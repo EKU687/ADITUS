@@ -1,75 +1,102 @@
 """
-Vue : Administration
-Gestion des utilisateurs et de l'attribution des rôles (Admin, Valideur, Demandeur).
+Vue : Administration - Gestion des Valideurs par Site
+Permet de configurer l'adresse e-mail du responsable valideur pour chaque bâtiment/site GNC.
 """
 
 import pandas as pd
 import streamlit as st
-from services.db import supabase, supabase_admin
+from services.db import supabase
+from views.nouvelle_demande import charger_liste_sites
+
+
+def charger_assignations_valideurs():
+    """Récupère la liste des assignations site <-> valideur depuis Supabase."""
+    try:
+        req = (
+            supabase.table("Valideurs_sites")
+            .select("id, site_nom, valideur_email")
+            .execute()
+        )
+        if req.data:
+            return req.data
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la lecture des valideurs : {e}")
+    return []
 
 
 def afficher_onglet_administration():
-    """Rendu du panneau d'administration des utilisateurs."""
-    st.subheader("⚙️ Administration des Utilisateurs et Rôles")
-    st.caption("Gérez les accès et les droits des utilisateurs du portail ADITUS.")
+    """Rendu du panneau d'administration des valideurs par site."""
+    st.subheader("⚙️ Gestion des Valideurs par Site")
+    st.info(
+        "💡 Espace réservé aux administrateurs pour configurer qui valide l'accès à quel bâtiment."
+    )
 
-    # Formulaire d'ajout / modification de rôle
-    with st.form("form_gestion_utilisateur", clear_on_submit=True):
-        col1, col2, col3 = st.columns([2, 2, 1])
-        with col1:
-            email_saisi = (
-                st.text_input("Adresse e-mail :", placeholder="prenom.nom@gouv.nc")
+    liste_sites = charger_liste_sites()
+
+    c_left, c_right = st.columns([1, 1])
+
+    with c_left:
+        st.markdown("### ➕ Assigner un valideur")
+        with st.form("form_assigner_valideur", clear_on_submit=True):
+            site_sel = st.selectbox(
+                "Sélectionnez le site :", ["Sélectionnez un site..."] + liste_sites
+            )
+            email_valideur = (
+                st.text_input(
+                    "Email du responsable (Valideur) :",
+                    placeholder="prenom.nom@gouv.nc",
+                )
                 .strip()
                 .lower()
             )
-        with col2:
-            role_selectionne = st.selectbox(
-                "Rôle à attribuer :", ["Demandeur", "Valideur", "Administrateur"]
-            )
-        with col3:
-            st.write("")
-            st.write("")
-            soumis = st.form_submit_button(
-                "Enregistrer 💾", type="primary", use_container_width=True
+
+            submitted = st.form_submit_button(
+                "Enregistrer le valideur 💾", type="primary"
             )
 
-        if soumis:
-            if not email_saisi or "@" not in email_saisi:
-                st.warning("⚠️ Veuillez saisir une adresse e-mail valide.")
-            else:
-                try:
-                    # Upsert dans la table Utilisateurs
-                    donnees_user = {"email": email_saisi, "role": role_selectionne}
-                    supabase.table("Utilisateurs").upsert(
-                        donnees_user, on_conflict="email"
-                    ).execute()
-                    st.success(
-                        f"✅ Rôle **{role_selectionne}** attribué avec succès à **{email_saisi}**."
-                    )
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Erreur lors de la mise à jour de l'utilisateur : {e}")
+            if submitted:
+                if site_sel == "Sélectionnez un site...":
+                    st.warning("⚠️ Veuillez sélectionner un site.")
+                elif not email_valideur or "@" not in email_valideur:
+                    st.warning("⚠️ Veuillez indiquer une adresse e-mail valide.")
+                else:
+                    try:
+                        # Vérifier si une entrée existe déjà pour ce site_nom
+                        req_exist = (
+                            supabase.table("Valideurs_sites")
+                            .select("id")
+                            .eq("site_nom", site_sel)
+                            .execute()
+                        )
 
-    st.divider()
-    st.markdown("### 📜 Liste des Utilisateurs Référencés")
+                        if req_exist.data and len(req_exist.data) > 0:
+                            # Mise à jour
+                            row_id = req_exist.data[0]["id"]
+                            supabase.table("Valideurs_sites").update(
+                                {"valideur_email": email_valideur}
+                            ).eq("id", row_id).execute()
+                        else:
+                            # Insertion
+                            supabase.table("Valideurs_sites").insert(
+                                {"site_nom": site_sel, "valideur_email": email_valideur}
+                            ).execute()
 
-    try:
-        req = (
-            supabase.table("Utilisateurs")
-            .select("*")
-            .order("email", desc=False)
-            .execute()
-        )
-        utilisateurs = req.data if req.data else []
+                        st.success(
+                            f"✅ Valideur **{email_valideur}** assigné au site **{site_sel}**."
+                        )
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Erreur lors de l'enregistrement : {e}")
 
-        if utilisateurs:
-            df = pd.DataFrame(utilisateurs)
-            st.dataframe(
-                df[["email", "role"]], use_container_width=True, hide_index=True
-            )
+    with c_right:
+        st.markdown("### 📋 Liste des assignations actuelles")
+        assignations = charger_assignations_valideurs()
+
+        if assignations:
+            df = pd.DataFrame(assignations)
+            # Sélection et renommage des colonnes pour l'affichage propre
+            cols_map = {"site_nom": "Site", "valideur_email": "Email du Valideur"}
+            df_display = df[["site_nom", "valideur_email"]].rename(columns=cols_map)
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
         else:
-            st.info(
-                "Aucun utilisateur spécifique n'est encore enregistré dans la table Utilisateurs."
-            )
-    except Exception as e:
-        st.error(f"❌ Erreur lors du chargement de la liste des utilisateurs : {e}")
+            st.write("Aucune assignation trouvée dans la base.")
