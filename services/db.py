@@ -1,17 +1,15 @@
 """
 Service d'accès à la base de données Supabase pour ADITUS.
-Gère la connexion sécurisée avec timeout étendu et les requêtes métier.
+Gère la connexion sécurisée et les requêtes métier.
 """
 
 import streamlit as st
 from supabase import create_client, Client
-from supabase.lib.client_options import ClientOptions
 
 from config import (
     SUPABASE_URL,
     SUPABASE_KEY,
     SUPABASE_SERVICE_KEY,
-    HTTP_TIMEOUT_SECONDS,
 )
 
 
@@ -19,15 +17,11 @@ from config import (
 def init_supabase_client(use_service_role: bool = False) -> Client:
     """
     Initialise et met en cache le client Supabase.
-    Configure un timeout personnalisé pour la base PostgREST.
     """
     key = SUPABASE_SERVICE_KEY if use_service_role else SUPABASE_KEY
 
-    # Contournement du bug d'initialisation du SDK Supabase Python
-    options = ClientOptions()
-    options.postgrest_client_timeout = HTTP_TIMEOUT_SECONDS
-
-    return create_client(SUPABASE_URL, key, options=options)
+    # Initialisation standard recommandée par le SDK Supabase Python
+    return create_client(SUPABASE_URL, key)
 
 
 # Instances globales du client Supabase
