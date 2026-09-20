@@ -146,29 +146,24 @@ def _traiter_decision(
     valideur_email: str,
     motif_refus: str = None,
 ):
-    """Met à jour le statut dans Supabase et déclenche l'e-mail de décision au demandeur."""
-    now_iso = datetime.datetime.now(ZoneInfo("Pacific/Noumea")).isoformat()
+    """Met à jour le statut dans Supabase de façon sécurisée et déclenche l'e-mail de décision."""
 
-    # Tentative 1 : Mise à jour avec date_validation
-    update_data = {
-        "statut": statut,
-        "valideur_email": valideur_email,
-        "date_validation": now_iso,
-    }
+    # 1. Préparation du dictionnaire de mise à jour minimal (100% compatible BDD)
+    update_data = {"statut": statut}
     if motif_refus:
         update_data["motif_refus"] = motif_refus
 
+    # 2. Exécution de la mise à jour
     try:
         supabase.table("Demandes_acces").update(update_data).eq(
             "id", id_demande
         ).execute()
     except Exception as e:
-        # Fallback si la colonne 'date_validation' n'existe pas dans la table
         err_msg = str(e)
-        if "date_validation" in err_msg or "PGRST204" in err_msg:
-            del update_data["date_validation"]
+        # Si même 'motif_refus' n'existe pas dans la table, on met à jour uniquement 'statut'
+        if "motif_refus" in err_msg or "PGRST204" in err_msg:
             try:
-                supabase.table("Demandes_acces").update(update_data).eq(
+                supabase.table("Demandes_acces").update({"statut": statut}).eq(
                     "id", id_demande
                 ).execute()
             except Exception as e_inner:
@@ -180,16 +175,21 @@ def _traiter_decision(
 
     st.success(f"✅ Demande #{id_demande} marquée comme **{statut}** !")
 
-    # Envoi de l'e-mail de notification de décision
-    envoyer_email_decision(
-        destinataire_email=demande_dict.get("email_demandeur"),
-        site_nom=demande_dict.get("site_id", "Site GNC"),
-        decision=statut,
-        date_entree=demande_dict.get("date_entree"),
-        heure_entree=demande_dict.get("heure_entree"),
-        date_sortie=demande_dict.get("date_sortie"),
-        heure_sortie=demande_dict.get("heure_sortie"),
-        motif_refus=motif_refus,
-    )
+    # 3. Envoi de l'e-mail de notification au demandeur
+    try:
+        envoyer_email_decision(
+            destinataire_email=demande_dict.get("email_demandeur"),
+            site_nom=demande_dict.get("site_id", "Site GNC"),
+            decision=statut,
+            date_entree=demande_dict.get("date_entree"),
+            heure_entree=demande_dict.get("heure_entree"),
+            date_sortie=demande_dict.get("date_sortie"),
+            heure_sortie=demande_dict.get("heure_sortie"),
+            motif_refus=motif_refus,
+        )
+    except Exception as e_mail:
+        st.info(
+            f"ℹ️ Statut mis à jour mais avertissement notification e-mail : {e_mail}"
+        )
 
     st.rerun()

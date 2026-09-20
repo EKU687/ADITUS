@@ -33,8 +33,11 @@ def charger_liste_codes_sites() -> list:
 def charger_assignations_valideurs():
     """Récupère la liste des assignations site <-> valideur depuis Supabase."""
     try:
-        # Essai avec code_site ou site_nom selon le schéma exact
-        req = supabase.table("Valideurs_sites").select("*").execute()
+        req = (
+            supabase.table("Valideurs_sites")
+            .select("id, site_nom, valideur_email")
+            .execute()
+        )
         if req.data:
             return req.data
     except Exception as e:
@@ -80,11 +83,11 @@ def afficher_onglet_administration():
                     st.warning("⚠️ Veuillez indiquer une adresse e-mail valide.")
                 else:
                     try:
-                        # Vérifier si une entrée existe déjà pour ce code_site / site_nom
+                        # Recherche basée uniquement sur la colonne existante site_nom
                         req_exist = (
                             supabase.table("Valideurs_sites")
                             .select("id")
-                            .or_(f"site_nom.eq.{site_sel},site_id.eq.{site_sel}")
+                            .eq("site_nom", site_sel)
                             .execute()
                         )
 
@@ -118,18 +121,10 @@ def afficher_onglet_administration():
 
         if assignations:
             df = pd.DataFrame(assignations)
-
-            # Gestion souple de la colonne identifiant le site (site_nom ou site_id)
-            col_site = (
-                "site_nom"
-                if "site_nom" in df.columns
-                else ("site_id" if "site_id" in df.columns else None)
-            )
-
-            if col_site and "valideur_email" in df.columns:
-                df_display = df[[col_site, "valideur_email"]].rename(
+            if "site_nom" in df.columns and "valideur_email" in df.columns:
+                df_display = df[["site_nom", "valideur_email"]].rename(
                     columns={
-                        col_site: "Code Site",
+                        "site_nom": "Code Site",
                         "valideur_email": "Email du Valideur",
                     }
                 )

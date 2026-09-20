@@ -1,14 +1,19 @@
 """
 Configuration globale du projet ADITUS (GNC-PASS)
-Centralisation des secrets, constantes UI, et paramètres réseau.
+Centralisation des secrets, constantes UI, métadonnées de version et paramètres réseau.
 """
 
 import os
 import streamlit as st
 
-# --- Paramètres de l'Application ---
+# --- Métadonnées de l'Application ---
 APP_TITLE = "ADITUS - Portail GNC-PASS"
-APP_ICON = "🛡️"
+APP_ICON = "🏢"
+APP_VERSION = "v1.1.0"
+APP_AUTHOR = "Éric KUTER"
+APP_ORGANIZATION = "Gouvernement de la Nouvelle-Calédonie"
+APP_RELEASE_DATE = "2026"
+
 TIMEZONE_NC = "Pacific/Noumea"
 
 # --- Rôles Utilisateurs ---

@@ -5,7 +5,13 @@ Point d'entrée principal de l'application Streamlit.
 
 import streamlit as st
 
-from config import APP_TITLE, APP_ICON
+from config import (
+    APP_TITLE,
+    APP_ICON,
+    APP_VERSION,
+    APP_AUTHOR,
+    APP_ORGANIZATION,
+)
 from services.auth import (
     initialiser_session_auth,
     afficher_ecran_connexion,
@@ -27,7 +33,7 @@ if not st.session_state.get("user_authenticated"):
     afficher_ecran_connexion()
     st.stop()
 
-# 3. Barre latérale (Profil & Déconnexion)
+# 3. Barre latérale (Profil, Métadonnées & Déconnexion)
 with st.sidebar:
     st.title(f"{APP_ICON} {APP_TITLE}")
     st.markdown(f"👤 **Connecté :** `{st.session_state.get('user_email')}`")
@@ -46,6 +52,12 @@ with st.sidebar:
 
     if st.button("Se déconnecter 🚪", type="secondary", use_container_width=True):
         deconnexion()
+
+    # --- INFORMATIONS DE VERSION (Pied de barre latérale) ---
+    st.divider()
+    st.caption(f"📦 Version : `{APP_VERSION}`")
+    st.caption(f"🏢 {APP_ORGANIZATION}")
+    st.caption(f"👨‍💻 {APP_AUTHOR}")
 
 # 4. Construction dynamique des Onglets basés sur les rôles
 onglets_titres = ["➕ Nouvelle demande", "📋 Suivi & Historique", "✅ Mes accès actifs"]
