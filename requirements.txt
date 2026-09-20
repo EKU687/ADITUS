@@ -3,4 +3,5 @@ supabase
 pandas
 bcrypt
 reportlab
-git+https://github.com/eku687/cadre-entreprise.git@23d7550
+sib-api-v3-sdk
+# git+https://github.com/eku687/cadre-entreprise.git@23d7550

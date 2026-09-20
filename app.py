@@ -4,9 +4,9 @@ import pandas as pd
 import datetime
 import httpx
 from supabase import create_client, Client
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+
+# Import des fonctions d'envoi d'e-mail depuis le module dédié
+from mailer import envoyer_email_notification, envoyer_email_decision
 
 
 # ==========================================
@@ -14,14 +14,11 @@ from email.mime.multipart import MIMEMultipart
 # ==========================================
 @st.cache_resource
 def init_connection() -> Client:
-    """Initialise la connexion à Supabase avec un timeout de 30s."""
+    """Initialise la connexion à Supabase avec un timeout réseau de 30s."""
     url = st.secrets["SUPABASE_URL"]
     key = st.secrets["SUPABASE_KEY"]
 
-    # 1. Création du client standard Supabase
     client = create_client(url, key)
-
-    # 2. Réglage direct du timeout (30 secondes) sur le client PostgREST interne
     client.postgrest.timeout = 30
 
     return client
@@ -32,7 +29,7 @@ supabase = init_connection()
 
 
 # ==========================================
-# 0_1. FONCTIONS GLOBALES
+# 0_1. FONCTIONS GLOBALES DE L'APPLICATION
 # ==========================================
 @st.cache_data(ttl=3600)
 def charger_sites_refero():
@@ -50,164 +47,13 @@ def charger_sites_refero():
         return ["Sélectionnez un site..."]
 
 
-def envoyer_email_notification(
-    destinataire_email, site_nom, demandeur_email, motif_demande
-):
-    """Envoie une notification par email au valideur via SSL (Port 465)."""
-    try:
-        # Nettoyage et conversion sécurisée du serveur et du port
-        smtp_server = (
-            str(st.secrets["SMTP_SERVER"]).strip().replace('"', "").replace("'", "")
-        )
-        smtp_port = int(
-            str(st.secrets["SMTP_PORT"]).strip().replace('"', "").replace("'", "")
-        )
-        sender_email = (
-            str(st.secrets["SMTP_EMAIL"]).strip().replace('"', "").replace("'", "")
-        )
-        sender_password = (
-            str(st.secrets["SMTP_PASSWORD"]).strip().replace('"', "").replace("'", "")
-        )
-
-        message = MIMEMultipart("alternative")
-        message["Subject"] = f"🔔 [GNC-PASS] Nouvelle demande d'accès - Site {site_nom}"
-        message["From"] = f"GNC Pass <{sender_email}>"
-        message["To"] = destinataire_email
-
-        html_content = f"""
-        <html>
-          <body style="font-family: Arial, sans-serif; color: #333;">
-            <h2 style="color: #0056b3;">Nouvelle demande d'accès en attente de validation</h2>
-            <p>Bonjour,</p>
-            <p>Une nouvelle demande d'accès vient d'être soumise pour le site <strong>{site_nom}</strong>.</p>
-            <table style="border-collapse: collapse; margin: 15px 0;">
-              <tr><td style="padding: 5px; font-weight: bold;">Demandeur :</td><td style="padding: 5px;">{demandeur_email}</td></tr>
-              <tr><td style="padding: 5px; font-weight: bold;">Motif :</td><td style="padding: 5px;">{motif_demande}</td></tr>
-            </table>
-            <p>Veuillez vous connecter sur le portail <strong>GNC-PASS</strong> pour valider ou refuser cette demande.</p>
-            <hr style="border: none; border-top: 1px solid #ccc; margin-top: 20px;">
-            <p style="font-size: 12px; color: #777;">Ceci est un message automatique envoyé par le système GNC-PASS.</p>
-          </body>
-        </html>
-        """
-        message.attach(MIMEText(html_content, "html"))
-
-        # Connexion SSL directe adaptée au port 465 pour Gmail / Google Workspace
-        with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=12) as server:
-            server.login(sender_email, sender_password)
-            server.sendmail(sender_email, destinataire_email, message.as_string())
-
-        st.toast(f"📧 Notification transmise à {destinataire_email}", icon="📩")
-        return True
-
-    except Exception as e:
-        st.warning(
-            f"⚠️ La demande a été enregistrée, mais la notification email n'a pas pu être envoyée : {e}"
-        )
-        return False
-
-
-def envoyer_email_decision(
-    destinataire_email,
-    site_nom,
-    decision,
-    date_entree=None,
-    heure_entree=None,
-    date_sortie=None,
-    heure_sortie=None,
-    motif_refus=None,
-):
-    """Envoie un e-mail de décision au demandeur via SSL (Port 465)."""
-    try:
-        smtp_server = (
-            str(st.secrets["SMTP_SERVER"]).strip().replace('"', "").replace("'", "")
-        )
-        smtp_port = int(
-            str(st.secrets["SMTP_PORT"]).strip().replace('"', "").replace("'", "")
-        )
-        sender_email = (
-            str(st.secrets["SMTP_EMAIL"]).strip().replace('"', "").replace("'", "")
-        )
-        sender_password = (
-            str(st.secrets["SMTP_PASSWORD"]).strip().replace('"', "").replace("'", "")
-        )
-
-        message = MIMEMultipart("alternative")
-
-        d_ent_fr = (
-            f"{date_entree[8:10]}/{date_entree[5:7]}/{date_entree[0:4]}"
-            if date_entree and len(date_entree) >= 10
-            else "N/C"
-        )
-        d_sor_fr = (
-            f"{date_sortie[8:10]}/{date_sortie[5:7]}/{date_sortie[0:4]}"
-            if date_sortie and len(date_sortie) >= 10
-            else "N/C"
-        )
-
-        if decision == "Validé":
-            sujet = f"✅ [GNC-PASS] Demande d'accès ACCORDÉE - Site {site_nom}"
-            couleur_titre = "#28a745"
-            texte_decision = f"""
-            <p style='font-size: 16px;'>Votre demande d'accès a été <strong>APPROUVÉE</strong>.</p>
-            <div style='background-color: #f8f9fa; border-left: 4px solid #28a745; padding: 12px; margin: 15px 0;'>
-                <h4 style='margin: 0 0 10px 0; color: #28a745;'>📋 Rappel de votre autorisation d'accès :</h4>
-                <ul style='margin: 0; padding-left: 20px;'>
-                    <li><strong>Site concerné :</strong> {site_nom}</li>
-                    <li><strong>Début d'accès :</strong> le {d_ent_fr} à {heure_entree[:-3] if heure_entree else ''}</li>
-                    <li><strong>Fin d'accès :</strong> le {d_sor_fr} à {heure_sortie[:-3] if heure_sortie else ''}</li>
-                </ul>
-            </div>
-            <p>Vous pouvez désormais vous présenter sur le site aux créneaux indiqués.</p>
-            """
-        else:
-            sujet = f"❌ [GNC-PASS] Demande d'accès REFUSÉE - Site {site_nom}"
-            couleur_titre = "#dc3545"
-            texte_decision = f"""
-            <p style='font-size: 16px;'>Votre demande d'accès pour le site <strong>{site_nom}</strong> a été <strong>REFUSÉE</strong>.</p>
-            <p><strong>Motif du refus :</strong> {motif_refus if motif_refus else 'Non précisé'}</p>
-            """
-
-        message["Subject"] = sujet
-        message["From"] = f"GNC Pass <{sender_email}>"
-        message["To"] = destinataire_email
-
-        html_content = f"""
-        <html>
-          <body style="font-family: Arial, sans-serif; color: #333;">
-            <h2 style="color: {couleur_titre};">Mise à jour de votre demande d'accès</h2>
-            <p>Bonjour,</p>
-            {texte_decision}
-            <hr style="border: none; border-top: 1px solid #ccc; margin-top: 20px;">
-            <p style="font-size: 12px; color: #777;">Ceci est un message automatique envoyé par le système GNC-PASS.</p>
-          </body>
-        </html>
-        """
-        message.attach(MIMEText(html_content, "html"))
-
-        with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=12) as server:
-            server.login(sender_email, sender_password)
-            server.sendmail(sender_email, destinataire_email, message.as_string())
-
-        st.toast(f"📧 Décision transmise par e-mail à {destinataire_email}", icon="📩")
-        return True
-
-    except Exception as e:
-        st.warning(
-            f"⚠️ La décision a été enregistrée, mais l'e-mail au demandeur n'a pas pu être envoyé : {e}"
-        )
-        return False
-
-
 def normaliser_immatriculation(immat_brute: str, est_nc: bool = True) -> str:
     """Transforme n'importe quelle saisie (123 456 nc, 123-456-NC) en format strict : 123456NC"""
     if not immat_brute:
         return ""
 
-    # Passage en majuscules et suppression des espaces / tirets
     immat_nettoyee = re.sub(r"[^A-Z0-9]", "", immat_brute.strip().upper())
 
-    # Si c'est du NC et que le suffixe NC manque, on l'ajoute
     if est_nc:
         chiffres = re.sub(r"\D", "", immat_nettoyee)
         if chiffres:
@@ -243,7 +89,6 @@ def verifier_roles_utilisateur(email_utilisateur):
 # ==========================================
 st.set_page_config(page_title="Demandes d'accès - GNC", page_icon="🏢", layout="wide")
 
-# Initialisation des variables de session
 if "user_authenticated" not in st.session_state:
     st.session_state["user_authenticated"] = False
 if "user_email" not in st.session_state:
@@ -262,7 +107,6 @@ if not st.session_state["user_authenticated"]:
     col_login, col_empty = st.columns([1, 1])
 
     with col_login:
-        # Étape 1 : Saisie de l'adresse email
         if not st.session_state["otp_sent"]:
             st.subheader("🔑 Connexion par e-mail")
             email_saisi = st.text_input(
@@ -276,7 +120,6 @@ if not st.session_state["user_authenticated"]:
             ):
                 if email_saisi and "@" in email_saisi:
                     try:
-                        # Demande d'envoi du code OTP via Supabase Auth
                         supabase.auth.sign_in_with_otp(
                             {
                                 "email": email_saisi,
@@ -291,7 +134,6 @@ if not st.session_state["user_authenticated"]:
                         st.rerun()
 
                     except Exception as e:
-                        # Capture spécifique des erreurs de Timeout HTTP (ReadTimeout)
                         err_str = str(e).lower()
                         if "timed out" in err_str or isinstance(
                             e, (httpx.ReadTimeout, httpx.TimeoutException)
@@ -307,7 +149,6 @@ if not st.session_state["user_authenticated"]:
                 else:
                     st.warning("⚠️ Veuillez saisir une adresse e-mail valide.")
 
-        # Étape 2 : Saisie du code reçu par mail
         else:
             st.subheader("📩 Saisissez votre code")
             st.info(f"Code transmis à : **{st.session_state['user_email']}**")
@@ -323,7 +164,6 @@ if not st.session_state["user_authenticated"]:
                 ):
                     if code_otp and len(code_otp.strip()) >= 6:
                         try:
-                            # Vérification du token auprès de Supabase
                             res = supabase.auth.verify_otp(
                                 {
                                     "email": st.session_state["user_email"],
@@ -335,9 +175,7 @@ if not st.session_state["user_authenticated"]:
                             if res.session:
                                 st.session_state["user_authenticated"] = True
                                 st.session_state["user_email"] = res.user.email
-                                # Transmet le token pour le RLS (Row Level Security)
                                 supabase.postgrest.auth(res.session.access_token)
-                                # Calcul des rôles (Admin / Valideur)
                                 est_admin, est_valideur = verifier_roles_utilisateur(
                                     res.user.email
                                 )
@@ -359,7 +197,6 @@ if not st.session_state["user_authenticated"]:
                     st.session_state["otp_sent"] = False
                     st.rerun()
 
-    # Bloque le reste de l'application tant que l'utilisateur n'est pas connecté
     st.stop()
 
 # ==========================================
@@ -559,6 +396,7 @@ with onglet_nouvelle:
                     )
 
                     if len(reponse.data) > 0:
+                        # Appel propre à la fonction importée depuis mailer.py
                         envoyer_email_notification(
                             destinataire_email=email_du_valideur,
                             site_nom=site_choisi,
@@ -658,7 +496,6 @@ with onglet_actifs:
         email_session = st.session_state.get("user_email")
         aujourdhui = datetime.date.today()
 
-        # 1. Vérification du rôle et récupération des demandes selon les privilèges
         if st.session_state.get("is_admin"):
             reponse_actifs = (
                 supabase.table("Demandes_acces")
@@ -680,7 +517,6 @@ with onglet_actifs:
         donnees_brutes = reponse_actifs.data or []
         donnees_actives = []
 
-        # 2. Filtrage Python strict pour éliminer les accès dont la date de sortie est dépassée
         for acces in donnees_brutes:
             date_sortie_str = acces.get("date_sortie")
             if date_sortie_str:
@@ -694,7 +530,6 @@ with onglet_actifs:
                 except ValueError:
                     continue
 
-        # 3. Affichage des cartes d'accès
         if not donnees_actives:
             st.warning("Vous n'avez actuellement aucun accès actif sur un site GNC.")
         else:
@@ -829,6 +664,7 @@ if onglet_valideur is not None:
                                     {"statut": "Validé"}
                                 ).eq("id", demande["id"]).execute()
 
+                                # Appel propre à la fonction importée depuis mailer.py
                                 envoyer_email_decision(
                                     destinataire_email=demande["email_demandeur"],
                                     site_nom=demande["site_id"],
@@ -857,6 +693,7 @@ if onglet_valideur is not None:
                                         {"statut": "Refusé"}
                                     ).eq("id", demande["id"]).execute()
 
+                                    # Appel propre à la fonction importée depuis mailer.py
                                     envoyer_email_decision(
                                         destinataire_email=demande["email_demandeur"],
                                         site_nom=demande["site_id"],
