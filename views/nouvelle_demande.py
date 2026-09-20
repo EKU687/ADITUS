@@ -17,7 +17,7 @@ def obtenir_date_nc() -> datetime.date:
 
 
 def _formater_date_fr(valeur) -> str:
-    """S'assure que la date est formatée proprement en chaîne ISO YYYY-MM-DD."""
+    """Formatage ISO pour la base de données YYYY-MM-DD."""
     if isinstance(valeur, (datetime.date, datetime.datetime)):
         return valeur.strftime("%Y-%m-%d")
     return str(valeur)
@@ -87,10 +87,14 @@ def afficher_onglet_nouvelle_demande():
             c_date1, c_date2 = st.columns(2)
             with c_date1:
                 date_entree = st.date_input(
-                    "📅 Date de début :", min_value=obtenir_date_nc()
+                    "📅 Date de début :",
+                    min_value=obtenir_date_nc(),
+                    format="DD/MM/YYYY",
                 )
             with c_date2:
-                date_sortie = st.date_input("📅 Date de fin :", min_value=date_entree)
+                date_sortie = st.date_input(
+                    "📅 Date de fin :", min_value=date_entree, format="DD/MM/YYYY"
+                )
 
             c_h1, c_h2 = st.columns(2)
             with c_h1:
@@ -102,7 +106,7 @@ def afficher_onglet_nouvelle_demande():
                     "🕒 Heure de départ :", value=datetime.time(17, 0)
                 )
 
-        # 2. Section véhicule conditionnelle (affichée uniquement si Véhicule sélectionné)
+        # 2. Section véhicule conditionnelle
         vehicule_immat = ""
         vehicule_type = ""
         vehicule_conducteur = ""
@@ -178,7 +182,21 @@ def afficher_onglet_nouvelle_demande():
                             "✅ Votre demande d'accès a été enregistrée avec succès !"
                         )
                         try:
-                            envoyer_email_notification(donnees_demande)
+                            # Appel sécurisé avec les arguments requis par la signature de mailer.py
+                            envoyer_email_notification(
+                                site_nom=site_concerne,
+                                demandeur_email=email_user,
+                                organisme=organisme,
+                                motif_demande=motif_demande or "Motif non précisé",
+                                mode_acces=mode_acces,
+                                date_entree=_formater_date_fr(date_entree),
+                                date_sortie=_formater_date_fr(date_sortie),
+                                heure_entree=heure_entree.strftime("%H:%M"),
+                                heure_sortie=heure_sortie.strftime("%H:%M"),
+                                vehicule_immat=vehicule_immat,
+                                vehicule_type=vehicule_type,
+                                vehicule_conducteur=vehicule_conducteur,
+                            )
                         except Exception as e_mail:
                             st.info(
                                 f"ℹ️ Demande créée, mais avertissement e-mail : {e_mail}"
