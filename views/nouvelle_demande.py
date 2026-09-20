@@ -182,24 +182,11 @@ def afficher_onglet_nouvelle_demande():
                             "✅ Votre demande d'accès a été enregistrée avec succès !"
                         )
                         try:
-                            # Appel sécurisé avec les arguments requis par la signature de mailer.py
-                            envoyer_email_notification(
-                                site_nom=site_concerne,
-                                demandeur_email=email_user,
-                                organisme=organisme,
-                                motif_demande=motif_demande or "Motif non précisé",
-                                mode_acces=mode_acces,
-                                date_entree=_formater_date_fr(date_entree),
-                                date_sortie=_formater_date_fr(date_sortie),
-                                heure_entree=heure_entree.strftime("%H:%M"),
-                                heure_sortie=heure_sortie.strftime("%H:%M"),
-                                vehicule_immat=vehicule_immat,
-                                vehicule_type=vehicule_type,
-                                vehicule_conducteur=vehicule_conducteur,
-                            )
+                            # Appel simplifié et propre passant le dictionnaire complet
+                            envoyer_email_notification(donnees_demande)
                         except Exception as e_mail:
                             st.info(
-                                f"ℹ️ Demande créée, mais avertissement e-mail : {e_mail}"
+                                f"ℹ️ Demande créée, mais notification e-mail non transmise : {e_mail}"
                             )
                 except Exception as e:
                     st.error(f"❌ Erreur lors de l'enregistrement de la demande : {e}")
