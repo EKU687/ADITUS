@@ -24,17 +24,23 @@ def _formater_date_fr(valeur) -> str:
 
 
 def charger_liste_sites() -> list:
-    """Récupère la liste dynamique des sites depuis Supabase."""
+    """Récupère la liste dynamique des sites directement depuis la table 'Sites'."""
     try:
-        req = supabase.table("Demandes_acces").select("site_id").execute()
-        sites = sorted(
-            list(set([row["site_id"] for row in req.data if row.get("site_id")]))
-        )
-        if sites:
-            return sites
-    except Exception:
-        pass
-    return ["DINUM", "DOUMER", "HABITAT", "AUTRE"]
+        req = supabase.table("Sites").select("*").execute()
+        if req.data:
+            # Récupère 'nom' ou 'site_id' selon la colonne présente dans la table Sites
+            sites = [
+                row.get("nom") or row.get("site_id") or row.get("libelle")
+                for row in req.data
+            ]
+            sites_propres = sorted(list(set([s for s in sites if s])))
+            if sites_propres:
+                return sites_propres
+    except Exception as e:
+        st.warning(f"⚠️ Impossible de charger la table Sites : {e}")
+
+    # Fallback de sécurité si la table Sites est vide ou inaccessible
+    return ["DINUM", "DOUMER", "HABITAT", "OUEMO", "AUTRE"]
 
 
 def afficher_onglet_nouvelle_demande():
@@ -46,6 +52,14 @@ def afficher_onglet_nouvelle_demande():
 
     email_user = st.session_state.get("user_email", "").strip().lower()
     liste_sites = charger_liste_sites()
+
+    # 1. Choix du mode d'accès hors formulaire pour la réactivité dynamique
+    mode_acces = st.radio(
+        "🚶‍♂️ / 🚗 Mode d'accès :",
+        ["Piéton", "Véhicule"],
+        horizontal=True,
+        key="radio_mode_acces",
+    )
 
     with st.form("form_nouvelle_demande", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -60,16 +74,13 @@ def afficher_onglet_nouvelle_demande():
                 "📝 Motif de la demande :",
                 placeholder="Ex : Intervention technique sur serveur, réunion...",
             )
+
+        with col2:
             nombre_personnes = st.number_input(
                 "👥 Nombre de personnes concernées :",
                 min_value=1,
                 max_value=50,
                 value=1,
-            )
-
-        with col2:
-            mode_acces = st.radio(
-                "🚶‍♂️ / 🚗 Mode d'accès :", ["Piéton", "Véhicule"], horizontal=True
             )
 
             c_date1, c_date2 = st.columns(2)
@@ -90,25 +101,31 @@ def afficher_onglet_nouvelle_demande():
                     "🕒 Heure de départ :", value=datetime.time(17, 0)
                 )
 
-        # Champs spécifiques au véhicule (affichés si le mode Véhicule est choisi)
-        st.divider()
-        st.markdown("##### 🚗 Informations véhicule & Conducteur (si accès Véhicule)")
+        # 2. Section véhicule conditionnelle (affichée uniquement si Véhicule sélectionné)
+        vehicule_immat = ""
+        vehicule_type = ""
+        vehicule_conducteur = ""
 
-        col_v1, col_v2, col_v3 = st.columns(3)
-        with col_v1:
-            vehicule_immat = (
-                st.text_input("🆔 Immatriculation :", placeholder="Ex : 456913NC")
-                .strip()
-                .upper()
-            )
-        with col_v2:
-            vehicule_type = st.text_input(
-                "🚘 Marque / Modèle / Couleur :", placeholder="Ex : Peugeot 208 Blanche"
-            )
-        with col_v3:
-            vehicule_conducteur = st.text_input(
-                "🪪 Nom du conducteur :", placeholder="Nom et Prénom du conducteur"
-            )
+        if mode_acces == "Véhicule":
+            st.divider()
+            st.markdown("##### 🚗 Informations du véhicule & Conducteur")
+
+            col_v1, col_v2, col_v3 = st.columns(3)
+            with col_v1:
+                vehicule_immat = (
+                    st.text_input("🆔 Immatriculation :", placeholder="Ex : 456913NC")
+                    .strip()
+                    .upper()
+                )
+            with col_v2:
+                vehicule_type = st.text_input(
+                    "🚘 Marque / Modèle / Couleur :",
+                    placeholder="Ex : Peugeot 208 Blanche",
+                )
+            with col_v3:
+                vehicule_conducteur = st.text_input(
+                    "🪪 Nom du conducteur :", placeholder="Nom et Prénom du conducteur"
+                )
 
         st.divider()
         soumis = st.form_submit_button(
