@@ -20,15 +20,13 @@ from config import (
 def init_supabase_client(use_service_role: bool = False) -> Client:
     """
     Initialise et met en cache le client Supabase.
-    Intègre une configuration HTTPX avec timeout de 30s pour éviter les erreurs de timeout OTP/Render.
+    Intègre un timeout personnalisé de 30s sur PostgREST pour gérer les latences Render.
     """
     key = SUPABASE_SERVICE_KEY if use_service_role else SUPABASE_KEY
 
-    # Configuration personnalisée du client HTTPX pour gérer les latences réseau
-    custom_options = ClientOptions(
-        postgrest_client_timeout=HTTP_TIMEOUT_SECONDS,
-        storage_client_timeout=HTTP_TIMEOUT_SECONDS,
-    )
+    # Configuration propre des options Supabase
+    custom_options = ClientOptions(postgrest_client_timeout=HTTP_TIMEOUT_SECONDS)
+
     return create_client(SUPABASE_URL, key, options=custom_options)
 
 
