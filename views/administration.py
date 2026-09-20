@@ -1,22 +1,40 @@
 """
 Vue : Administration - Gestion des Valideurs par Site
-Permet de configurer l'adresse e-mail du responsable valideur pour chaque bâtiment/site GNC.
+Permet de configurer l'adresse e-mail du responsable valideur pour chaque bâtiment/site GNC (identifié par son code_site).
 """
 
 import pandas as pd
 import streamlit as st
 from services.db import supabase
-from views.nouvelle_demande import charger_liste_sites
+
+
+def charger_liste_codes_sites() -> list:
+    """Récupère la liste dynamique des codes de sites actifs depuis la table 'Sites'."""
+    try:
+        req = (
+            supabase.table("Sites")
+            .select("code_site")
+            .eq("actif", True)
+            .order("code_site", desc=False)
+            .execute()
+        )
+
+        if req.data:
+            codes = [row["code_site"] for row in req.data if row.get("code_site")]
+            if codes:
+                return codes
+    except Exception as e:
+        st.warning(f"⚠️ Erreur lors de la lecture des codes de sites : {e}")
+
+    # Valeurs de secours par défaut
+    return ["DINUM", "DOUMER", "DSF", "OUEMO", "HABITAT"]
 
 
 def charger_assignations_valideurs():
     """Récupère la liste des assignations site <-> valideur depuis Supabase."""
     try:
-        req = (
-            supabase.table("Valideurs_sites")
-            .select("id, site_nom, valideur_email")
-            .execute()
-        )
+        # Essai avec code_site ou site_nom selon le schéma exact
+        req = supabase.table("Valideurs_sites").select("*").execute()
         if req.data:
             return req.data
     except Exception as e:
@@ -31,7 +49,7 @@ def afficher_onglet_administration():
         "💡 Espace réservé aux administrateurs pour configurer qui valide l'accès à quel bâtiment."
     )
 
-    liste_sites = charger_liste_sites()
+    liste_codes_sites = charger_liste_codes_sites()
 
     c_left, c_right = st.columns([1, 1])
 
@@ -39,7 +57,8 @@ def afficher_onglet_administration():
         st.markdown("### ➕ Assigner un valideur")
         with st.form("form_assigner_valideur", clear_on_submit=True):
             site_sel = st.selectbox(
-                "Sélectionnez le site :", ["Sélectionnez un site..."] + liste_sites
+                "Sélectionnez le code du site :",
+                ["Sélectionnez un site..."] + liste_codes_sites,
             )
             email_valideur = (
                 st.text_input(
@@ -61,24 +80,29 @@ def afficher_onglet_administration():
                     st.warning("⚠️ Veuillez indiquer une adresse e-mail valide.")
                 else:
                     try:
-                        # Vérifier si une entrée existe déjà pour ce site_nom
+                        # Vérifier si une entrée existe déjà pour ce code_site / site_nom
                         req_exist = (
                             supabase.table("Valideurs_sites")
                             .select("id")
-                            .eq("site_nom", site_sel)
+                            .or_(f"site_nom.eq.{site_sel},site_id.eq.{site_sel}")
                             .execute()
                         )
 
+                        donnees_maj = {
+                            "site_nom": site_sel,
+                            "valideur_email": email_valideur,
+                        }
+
                         if req_exist.data and len(req_exist.data) > 0:
-                            # Mise à jour
+                            # Mise à jour de la ligne existante
                             row_id = req_exist.data[0]["id"]
-                            supabase.table("Valideurs_sites").update(
-                                {"valideur_email": email_valideur}
-                            ).eq("id", row_id).execute()
+                            supabase.table("Valideurs_sites").update(donnees_maj).eq(
+                                "id", row_id
+                            ).execute()
                         else:
-                            # Insertion
+                            # Création d'une nouvelle assignation
                             supabase.table("Valideurs_sites").insert(
-                                {"site_nom": site_sel, "valideur_email": email_valideur}
+                                donnees_maj
                             ).execute()
 
                         st.success(
@@ -94,9 +118,23 @@ def afficher_onglet_administration():
 
         if assignations:
             df = pd.DataFrame(assignations)
-            # Sélection et renommage des colonnes pour l'affichage propre
-            cols_map = {"site_nom": "Site", "valideur_email": "Email du Valideur"}
-            df_display = df[["site_nom", "valideur_email"]].rename(columns=cols_map)
-            st.dataframe(df_display, use_container_width=True, hide_index=True)
+
+            # Gestion souple de la colonne identifiant le site (site_nom ou site_id)
+            col_site = (
+                "site_nom"
+                if "site_nom" in df.columns
+                else ("site_id" if "site_id" in df.columns else None)
+            )
+
+            if col_site and "valideur_email" in df.columns:
+                df_display = df[[col_site, "valideur_email"]].rename(
+                    columns={
+                        col_site: "Code Site",
+                        "valideur_email": "Email du Valideur",
+                    }
+                )
+                st.dataframe(df_display, use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(df, use_container_width=True, hide_index=True)
         else:
             st.write("Aucune assignation trouvée dans la base.")

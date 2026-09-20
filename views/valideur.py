@@ -1,6 +1,6 @@
 """
 Vue : Espace Valideur
-Permet aux valideurs et administrateurs d'examiner, approuver ou refuser les demandes d'accès.
+Permet aux responsables de site d'examiner, approuver ou refuser les demandes d'accès en attente.
 """
 
 import datetime
@@ -8,110 +8,152 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
-from services.db import supabase, supabase_admin
+from services.db import supabase
 from services.mailer import envoyer_email_decision
 
 
-def afficher_onglet_valideur():
-    """Rendu de l'espace de validation des demandes."""
-    st.subheader("⚖️ Espace de Validation des Demandes")
-    st.caption("Examinez les demandes en attente et traitez-les.")
+def obtenir_date_nc() -> datetime.date:
+    """Renvoie la date actuelle à Nouméa."""
+    return datetime.datetime.now(ZoneInfo("Pacific/Noumea")).date()
 
+
+def charger_demandes_attente(email_valideur: str, est_admin: bool = False):
+    """Récupère les demandes à valider pour les sites gérés par le valideur."""
     try:
-        # Récupération des demandes en attente
-        req = (
-            supabase.table("Demandes_acces")
-            .select("*")
-            .eq("statut", "En attente")
-            .order("created_at", desc=False)
-            .execute()
-        )
+        # Récupérer les sites autorisés pour ce valideur
+        sites_autorises = []
+        if not est_admin:
+            req_sites = (
+                supabase.table("Valideurs_sites")
+                .select("site_nom")
+                .ilike("valideur_email", email_valideur.strip().lower())
+                .execute()
+            )
+            if req_sites.data:
+                sites_autorises = [
+                    row["site_nom"] for row in req_sites.data if row.get("site_nom")
+                ]
 
-        demandes_en_attente = req.data if req.data else []
+        query = supabase.table("Demandes_acces").select("*").eq("statut", "En attente")
 
-        if not demandes_en_attente:
-            st.success("🎉 Aucune demande en attente de validation pour le moment.")
-            return
+        if not est_admin and sites_autorises:
+            query = query.in_("site_id", sites_autorises)
 
-        st.info(
-            f"📋 **{len(demandes_en_attente)}** demande(s) en attente de traitement."
-        )
+        req = query.order("created_at", desc=True).execute()
+        return req.data if req.data else []
+    except Exception as e:
+        st.error(f"❌ Erreur lors du chargement des demandes en attente : {e}")
+        return []
 
-        for d in demandes_en_attente:
-            id_demande = d.get("id")
-            email_demandeur = d.get("email_demandeur")
-            site_id = d.get("site_id")
 
-            with st.expander(
-                f"📌 Demande #{id_demande} — Site : {site_id} | Demandeur : {email_demandeur}",
-                expanded=True,
-            ):
-                col1, col2 = st.columns(2)
+def afficher_onglet_valideur():
+    """Rendu de l'Espace Valideur."""
+    st.subheader("👑 Espace de Validation des Demandes")
+    st.caption("Examinez et traitez les demandes d'accès soumises pour vos sites.")
 
-                with col1:
-                    st.markdown(f"👤 **Demandeur :** {email_demandeur}")
-                    st.markdown(f"🏢 **Organisme :** {d.get('organisme')}")
-                    st.markdown(f"📝 **Motif :** {d.get('motif')}")
-                    st.markdown(f"🚶‍♂️ / 🚗 **Mode d'accès :** {d.get('mode_acces')}")
+    email_user = st.session_state.get("user_email", "").strip().lower()
+    est_admin = st.session_state.get("is_admin", False)
 
-                with col2:
+    demandes = charger_demandes_attente(email_user, est_admin)
+
+    if not demandes:
+        st.info("🎉 Aucune demande d'accès en attente de validation pour le moment.")
+        return
+
+    st.markdown(f"**{len(demandes)}** demande(s) en attente de traitement :")
+
+    for d in demandes:
+        id_demande = d.get("id")
+        site_nom = d.get("site_id", "Non précisé")
+        demandeur = d.get("email_demandeur", "Inconnu")
+        organisme = d.get("organisme", "N/C")
+        motif = d.get("motif", "Non précisé")
+        mode = d.get("mode_acces", "Piéton")
+        nb_pers = d.get("nombre_personnes", 1)
+
+        d_entree = d.get("date_entree", "")
+        d_sortie = d.get("date_sortie", "")
+        h_entree = str(d.get("heure_entree", ""))[:5]
+        h_sortie = str(d.get("heure_sortie", ""))[:5]
+
+        with st.expander(
+            f"📌 Demande #{id_demande} — Site : **{site_nom}** (par {demandeur})",
+            expanded=True,
+        ):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown(f"👤 **Demandeur :** `{demandeur}`")
+                st.markdown(f"🏢 **Organisme :** {organisme}")
+                st.markdown(f"👥 **Effectif :** {nb_pers} personne(s)")
+                st.markdown(f"📝 **Motif :** {motif}")
+
+            with col2:
+                st.markdown(f"🚶‍♂️/🚗 **Mode d'accès :** {mode}")
+                if mode == "Véhicule":
                     st.markdown(
-                        f"📅 **Période :** Du {d.get('date_entree')} au {d.get('date_sortie')}"
+                        f"🆔 **Plaque :** `{d.get('vehicule_immatriculation', 'N/C')}`"
                     )
+                    st.markdown(f"🚘 **Véhicule :** {d.get('vehicule_type', 'N/C')}")
                     st.markdown(
-                        f"🕒 **Horaires :** De {str(d.get('heure_entree'))[:5]} à {str(d.get('heure_sortie'))[:5]}"
+                        f"🪪 **Conducteur :** {d.get('vehicule_conducteur', 'N/C')}"
                     )
-                    if d.get("mode_acces") == "Véhicule":
-                        st.markdown(
-                            f"🆔 **Plaque :** `{d.get('vehicule_immatriculation')}`"
-                        )
-                        st.markdown(f"🚘 **Véhicule :** {d.get('vehicule_type')}")
-                        st.markdown(
-                            f"🪪 **Conducteur :** {d.get('vehicule_conducteur')}"
-                        )
 
-                st.divider()
+                st.markdown(f"📅 **Période :** Du {d_entree} au {d_sortie}")
+                st.markdown(f"🕒 **Horaires :** De {h_entree} à {h_sortie}")
 
-                col_btn_val, col_btn_ref, col_motif = st.columns([1, 1, 2])
-                motif_refus_input = col_motif.text_input(
-                    "Motif en cas de refus :", key=f"refus_motif_{id_demande}"
-                )
+            st.divider()
 
-                with col_btn_val:
+            # Actions de Validation / Refus
+            col_v, col_r, _ = st.columns([1, 1, 2])
+
+            with col_v:
+                if st.button(
+                    "Valider ✅",
+                    key=f"btn_val_{id_demande}",
+                    type="primary",
+                    use_container_width=True,
+                ):
+                    _traiter_decision(id_demande, "Validé", d, email_user)
+
+            with col_r:
+                with st.popover("Refuser ❌", use_container_width=True):
+                    st.markdown("##### Motif du refus")
+                    motif_refus = st.text_area(
+                        "Explication du refus :", key=f"txt_refus_{id_demande}"
+                    )
                     if st.button(
-                        "Valider ✅",
-                        key=f"btn_valider_{id_demande}",
+                        "Confirmer le refus",
+                        key=f"btn_conf_refus_{id_demande}",
                         type="primary",
-                        use_container_width=True,
                     ):
-                        traiter_decision(d, "Validé", "")
-
-                with col_btn_ref:
-                    if st.button(
-                        "Refuser ❌",
-                        key=f"btn_refuser_{id_demande}",
-                        use_container_width=True,
-                    ):
-                        if not motif_refus_input.strip():
+                        if not motif_refus.strip():
                             st.warning("⚠️ Veuillez indiquer un motif de refus.")
                         else:
-                            traiter_decision(d, "Refusé", motif_refus_input.strip())
+                            _traiter_decision(
+                                id_demande,
+                                "Refusé",
+                                d,
+                                email_user,
+                                motif_refus=motif_refus.strip(),
+                            )
 
-    except Exception as e:
-        st.error(f"❌ Erreur lors du chargement des demandes à valider : {e}")
 
+def _traiter_decision(
+    id_demande,
+    statut: str,
+    demande_dict: dict,
+    valideur_email: str,
+    motif_refus: str = None,
+):
+    """Met à jour le statut dans Supabase et déclenche l'e-mail de décision au demandeur."""
+    now_iso = datetime.datetime.now(ZoneInfo("Pacific/Noumea")).isoformat()
 
-def traiter_decision(demande: dict, nouveau_statut: str, motif_refus: str = ""):
-    """Met à jour le statut dans Supabase et envoie un e-mail de notification au demandeur."""
-    id_demande = demande.get("id")
-    email_valideur = st.session_state.get("user_email", "").strip().lower()
-
+    # Tentative 1 : Mise à jour avec date_validation
     update_data = {
-        "statut": nouveau_statut,
-        "valideur_email": email_valideur,
-        "date_validation": datetime.datetime.now(
-            ZoneInfo("Pacific/Noumea")
-        ).isoformat(),
+        "statut": statut,
+        "valideur_email": valideur_email,
+        "date_validation": now_iso,
     }
     if motif_refus:
         update_data["motif_refus"] = motif_refus
@@ -120,18 +162,34 @@ def traiter_decision(demande: dict, nouveau_statut: str, motif_refus: str = ""):
         supabase.table("Demandes_acces").update(update_data).eq(
             "id", id_demande
         ).execute()
-        st.success(
-            f" Statut mis à jour : **{nouveau_statut}** pour la demande #{id_demande}."
-        )
-
-        # Envoi de l'e-mail de décision via Brevo
-        try:
-            envoyer_email_decision(demande, nouveau_statut, motif_refus)
-        except Exception as e_mail:
-            st.info(
-                f"ℹ️ Statut mis à jour mais erreur lors de l'envoi de l'e-mail : {e_mail}"
-            )
-
-        st.rerun()
     except Exception as e:
-        st.error(f"❌ Erreur lors de la mise à jour de la demande : {e}")
+        # Fallback si la colonne 'date_validation' n'existe pas dans la table
+        err_msg = str(e)
+        if "date_validation" in err_msg or "PGRST204" in err_msg:
+            del update_data["date_validation"]
+            try:
+                supabase.table("Demandes_acces").update(update_data).eq(
+                    "id", id_demande
+                ).execute()
+            except Exception as e_inner:
+                st.error(f"❌ Erreur lors de la mise à jour de la demande : {e_inner}")
+                return
+        else:
+            st.error(f"❌ Erreur lors de la mise à jour de la demande : {e}")
+            return
+
+    st.success(f"✅ Demande #{id_demande} marquée comme **{statut}** !")
+
+    # Envoi de l'e-mail de notification de décision
+    envoyer_email_decision(
+        destinataire_email=demande_dict.get("email_demandeur"),
+        site_nom=demande_dict.get("site_id", "Site GNC"),
+        decision=statut,
+        date_entree=demande_dict.get("date_entree"),
+        heure_entree=demande_dict.get("heure_entree"),
+        date_sortie=demande_dict.get("date_sortie"),
+        heure_sortie=demande_dict.get("heure_sortie"),
+        motif_refus=motif_refus,
+    )
+
+    st.rerun()
