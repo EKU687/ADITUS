@@ -5,14 +5,14 @@ Permet de configurer l'adresse e-mail du responsable valideur pour chaque bâtim
 
 import pandas as pd
 import streamlit as st
-from services.db import supabase
+from services.db import supabase_admin
 
 
 def charger_liste_codes_sites() -> list:
     """Récupère la liste dynamique des codes de sites actifs depuis la table 'Sites'."""
     try:
         req = (
-            supabase.table("Sites")
+            supabase_admin.table("Sites")
             .select("code_site")
             .eq("actif", True)
             .order("code_site", desc=False)
@@ -34,7 +34,7 @@ def charger_assignations_valideurs():
     """Récupère la liste des assignations site <-> valideur depuis Supabase."""
     try:
         req = (
-            supabase.table("Valideurs_sites")
+            supabase_admin.table("Valideurs_sites")
             .select("id, site_nom, valideur_email")
             .execute()
         )
@@ -85,7 +85,7 @@ def afficher_onglet_administration():
                     try:
                         # Recherche basée uniquement sur la colonne existante site_nom
                         req_exist = (
-                            supabase.table("Valideurs_sites")
+                            supabase_admin.table("Valideurs_sites")
                             .select("id")
                             .eq("site_nom", site_sel)
                             .execute()
@@ -99,12 +99,12 @@ def afficher_onglet_administration():
                         if req_exist.data and len(req_exist.data) > 0:
                             # Mise à jour de la ligne existante
                             row_id = req_exist.data[0]["id"]
-                            supabase.table("Valideurs_sites").update(donnees_maj).eq(
+                            supabase_admin.table("Valideurs_sites").update(donnees_maj).eq(
                                 "id", row_id
                             ).execute()
                         else:
                             # Création d'une nouvelle assignation
-                            supabase.table("Valideurs_sites").insert(
+                            supabase_admin.table("Valideurs_sites").insert(
                                 donnees_maj
                             ).execute()
 

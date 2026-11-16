@@ -4,6 +4,7 @@ Gère les notifications de nouvelles demandes et l'envoi des décisions (Accord/
 """
 
 import datetime
+import os
 import streamlit as st
 import sib_api_v3_sdk
 from sib_api_v3_sdk.rest import ApiException
@@ -15,7 +16,10 @@ EMAIL_VALIDEUR_DEFAUT = "eric.kuter@gouv.nc"
 
 def _get_brevo_api_instance():
     """Initialise l'instance d'API Brevo en récupérant la clé depuis les secrets Streamlit."""
-    api_key = st.secrets.get("BREVO_API_KEY", "").strip()
+    try:
+        api_key = st.secrets.get("BREVO_API_KEY", "").strip()
+    except Exception:
+        api_key = os.environ.get("BREVO_API_KEY", "").strip()
     if not api_key:
         st.error("⚠️ Clé BREVO_API_KEY manquante dans les secrets.")
         return None
@@ -36,6 +40,44 @@ def _formater_date_fr(date_val) -> str:
     if isinstance(date_val, str) and len(date_val) >= 10:
         return f"{date_val[8:10]}/{date_val[5:7]}/{date_val[0:4]}"
     return str(date_val)
+
+
+def envoyer_email_otp(destinataire_email: str, code_otp: str) -> bool:
+    """Envoie le code de vérification de connexion (OTP) au demandeur via Brevo."""
+    if not destinataire_email or not code_otp:
+        return False
+
+    api_instance = _get_brevo_api_instance()
+    if not api_instance:
+        return False
+
+    html_content = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; color: #333;">
+        <h2 style="color: #0056b3;">Code de vérification GNC-PASS</h2>
+        <p>Bonjour,</p>
+        <p>Voici votre code de vérification pour vous connecter au portail <strong>GNC-PASS</strong> :</p>
+        <p style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #b02a37; text-align: center; margin: 25px 0;">{code_otp}</p>
+        <p>Ce code est valable <strong>10 minutes</strong> et ne doit être communiqué à personne.</p>
+        <hr style="border: none; border-top: 1px solid #ccc; margin-top: 20px;">
+        <p style="font-size: 12px; color: #777;">Ceci est un message automatique envoyé par le système GNC-PASS — ne pas répondre.</p>
+      </body>
+    </html>
+    """
+
+    send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+        to=[{"email": destinataire_email}],
+        sender={"name": "Portail ADITUS (GNC-PASS)", "email": EXPEDITEUR_ADITUS},
+        subject="🔑 [GNC-PASS] Votre code de vérification de connexion",
+        html_content=html_content,
+    )
+
+    try:
+        api_instance.send_transac_email(send_smtp_email)
+        return True
+    except ApiException as e:
+        st.warning(f"⚠️ Erreur Brevo lors de l'envoi du code de vérification : {e}")
+        return False
 
 
 def envoyer_email_notification(
@@ -192,10 +234,10 @@ def envoyer_email_decision(
 def obtenir_email_valideur_site(site_nom: str) -> str:
     """Consulte la table Valideurs_sites pour trouver l'e-mail du responsable du site."""
     try:
-        from services.db import supabase
+        from services.db import supabase_admin
 
         req = (
-            supabase.table("Valideurs_sites")
+            supabase_admin.table("Valideurs_sites")
             .select("valideur_email")
             .eq("site_nom", site_nom)
             .execute()

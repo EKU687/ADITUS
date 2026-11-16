@@ -3,9 +3,10 @@ Service d'Authentification pour ADITUS.
 Gère les variables de session, l'envoi/vérification d'OTP et l'écran de connexion UI.
 """
 
-import httpx
 import streamlit as st
-from services.db import supabase
+from services.db import supabase, supabase_admin
+from services.mailer import envoyer_email_otp
+from services.otp import generer_otp, verifier_otp
 
 # Liste des e-mails administrateurs principaux par défaut
 ADMINS_SYSTEME = ["eric.kuter@gouv.nc"]
@@ -25,7 +26,7 @@ def verifier_roles_utilisateur(email: str):
     try:
         # Vérification dans la table Utilisateurs ou Valideurs
         req = (
-            supabase.table("Utilisateurs")
+            supabase_admin.table("Utilisateurs")
             .select("role")
             .ilike("email", email_clean)
             .execute()
@@ -39,7 +40,7 @@ def verifier_roles_utilisateur(email: str):
 
         # Vérification alternative si l'utilisateur est enregistré comme valideur d'au moins un site
         req_valideur = (
-            supabase.table("Valideurs_sites")
+            supabase_admin.table("Valideurs_sites")
             .select("site_id")
             .ilike("email_valideur", email_clean)
             .execute()
@@ -62,6 +63,8 @@ def initialiser_session_auth():
         st.session_state["user_email"] = ""
     if "otp_sent" not in st.session_state:
         st.session_state["otp_sent"] = False
+    if "otp_record" not in st.session_state:
+        st.session_state["otp_record"] = None
     if "is_admin" not in st.session_state:
         st.session_state["is_admin"] = False
     if "is_valideur" not in st.session_state:
@@ -91,33 +94,20 @@ def afficher_ecran_connexion():
                 use_container_width=True,
             ):
                 if email_saisi and "@" in email_saisi:
-                    try:
-                        supabase.auth.sign_in_with_otp(
-                            {
-                                "email": email_saisi,
-                                "options": {"should_create_user": True},
-                            }
-                        )
+                    nouveau_code, otp_record = generer_otp()
+                    if envoyer_email_otp(email_saisi, nouveau_code):
                         st.session_state["user_email"] = email_saisi
+                        st.session_state["otp_record"] = otp_record
                         st.session_state["otp_sent"] = True
                         st.success(
-                            f"Un code de vérification a été envoyé à **{email_saisi}**."
+                            f"Un code de vérification a été envoyé à **{email_saisi}** (valable 10 minutes)."
                         )
                         st.rerun()
-
-                    except Exception as e:
-                        err_str = str(e).lower()
-                        if "timed out" in err_str or isinstance(
-                            e, (httpx.ReadTimeout, httpx.TimeoutException)
-                        ):
-                            st.session_state["user_email"] = email_saisi
-                            st.session_state["otp_sent"] = True
-                            st.warning(
-                                "⚠️ L'envoi prend du temps, mais le code a probablement été transmis. Saisissez-le ci-dessous."
-                            )
-                            st.rerun()
-                        else:
-                            st.error(f"❌ Erreur lors de l'envoi du code : {e}")
+                    else:
+                        st.error(
+                            "❌ Erreur lors de l'envoi du code : vérifiez la clé BREVO_API_KEY "
+                            "et que l'adresse expéditrice est validée sur Brevo."
+                        )
                 else:
                     st.warning("⚠️ Veuillez saisir une adresse e-mail valide.")
 
@@ -135,31 +125,29 @@ def afficher_ecran_connexion():
                     "Valider et accéder 🚀", type="primary", use_container_width=True
                 ):
                     if code_otp and len(code_otp.strip()) >= 6:
-                        try:
-                            res = supabase.auth.verify_otp(
-                                {
-                                    "email": st.session_state["user_email"],
-                                    "token": code_otp.strip(),
-                                    "type": "email",
-                                }
+                        valide, raison = verifier_otp(
+                            code_otp, st.session_state.get("otp_record")
+                        )
+                        if valide:
+                            email = st.session_state["user_email"]
+                            st.session_state["user_authenticated"] = True
+
+                            est_admin, est_valideur = verifier_roles_utilisateur(email)
+                            st.session_state["is_admin"] = est_admin
+                            st.session_state["is_valideur"] = est_valideur
+
+                            st.success("Connexion réussie !")
+                            st.rerun()
+                        elif raison == "expired":
+                            st.error(
+                                "❌ Code expiré (valable 10 minutes). Demandez un nouveau code."
                             )
-
-                            if res.session:
-                                st.session_state["user_authenticated"] = True
-                                st.session_state["user_email"] = res.user.email
-
-                                est_admin, est_valideur = verifier_roles_utilisateur(
-                                    res.user.email
-                                )
-                                st.session_state["is_admin"] = est_admin
-                                st.session_state["is_valideur"] = est_valideur
-
-                                st.success("Connexion réussie !")
-                                st.rerun()
-                            else:
-                                st.error("❌ Code invalide ou expiré.")
-                        except Exception as e:
-                            st.error(f"❌ Erreur de vérification : {e}")
+                        elif raison == "too_many":
+                            st.error(
+                                "❌ Trop de tentatives incorrectes. Demandez un nouveau code."
+                            )
+                        else:
+                            st.error("❌ Code incorrect.")
                     else:
                         st.warning(
                             "⚠️ Veuillez entrer au moins les 6 chiffres du code."
@@ -168,6 +156,7 @@ def afficher_ecran_connexion():
             with col_back:
                 if st.button("Changer d'e-mail 🔄", use_container_width=True):
                     st.session_state["otp_sent"] = False
+                    st.session_state["otp_record"] = None
                     st.rerun()
 
 
@@ -179,6 +168,7 @@ def deconnexion():
         pass
     st.session_state["user_authenticated"] = False
     st.session_state["otp_sent"] = False
+    st.session_state["otp_record"] = None
     st.session_state["user_email"] = ""
     st.session_state["is_admin"] = False
     st.session_state["is_valideur"] = False

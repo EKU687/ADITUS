@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
-from services.db import supabase
+from services.db import supabase_admin
 from services.mailer import envoyer_email_decision
 
 
@@ -24,7 +24,7 @@ def charger_demandes_attente(email_valideur: str, est_admin: bool = False):
         sites_autorises = []
         if not est_admin:
             req_sites = (
-                supabase.table("Valideurs_sites")
+                supabase_admin.table("Valideurs_sites")
                 .select("site_nom")
                 .ilike("valideur_email", email_valideur.strip().lower())
                 .execute()
@@ -34,7 +34,7 @@ def charger_demandes_attente(email_valideur: str, est_admin: bool = False):
                     row["site_nom"] for row in req_sites.data if row.get("site_nom")
                 ]
 
-        query = supabase.table("Demandes_acces").select("*").eq("statut", "En attente")
+        query = supabase_admin.table("Demandes_acces").select("*").eq("statut", "En attente")
 
         if not est_admin and sites_autorises:
             query = query.in_("site_id", sites_autorises)
@@ -153,19 +153,37 @@ def _traiter_decision(
     if motif_refus:
         update_data["motif_refus"] = motif_refus
 
-    # 2. Exécution de la mise à jour
+    # 2. Exécution de la mise à jour (avec .select() pour vérifier que la ligne a bien été modifiée)
     try:
-        supabase.table("Demandes_acces").update(update_data).eq(
-            "id", id_demande
-        ).execute()
+        res = (
+            supabase_admin.table("Demandes_acces")
+            .update(update_data)
+            .eq("id", id_demande)
+            .select("id")
+            .execute()
+        )
+        if not res.data:
+            st.error(
+                f"❌ Mise à jour sans effet : aucune ligne trouvée avec id={id_demande!r}."
+            )
+            return
     except Exception as e:
         err_msg = str(e)
         # Si même 'motif_refus' n'existe pas dans la table, on met à jour uniquement 'statut'
         if "motif_refus" in err_msg or "PGRST204" in err_msg:
             try:
-                supabase.table("Demandes_acces").update({"statut": statut}).eq(
-                    "id", id_demande
-                ).execute()
+                res = (
+                    supabase_admin.table("Demandes_acces")
+                    .update({"statut": statut})
+                    .eq("id", id_demande)
+                    .select("id")
+                    .execute()
+                )
+                if not res.data:
+                    st.error(
+                        f"❌ Mise à jour sans effet : aucune ligne trouvée avec id={id_demande!r}."
+                    )
+                    return
             except Exception as e_inner:
                 st.error(f"❌ Erreur lors de la mise à jour de la demande : {e_inner}")
                 return

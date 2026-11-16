@@ -7,7 +7,7 @@ import datetime
 from zoneinfo import ZoneInfo
 import streamlit as st
 
-from services.db import supabase
+from services.db import supabase_admin
 from services.mailer import envoyer_email_notification
 
 
@@ -27,7 +27,7 @@ def charger_liste_sites() -> list:
     """Récupère la liste dynamique des sites actifs depuis la table 'Sites'."""
     try:
         req = (
-            supabase.table("Sites")
+            supabase_admin.table("Sites")
             .select("nom_site")
             .eq("actif", True)
             .order("nom_site", desc=False)
@@ -173,7 +173,7 @@ def afficher_onglet_nouvelle_demande():
 
                 try:
                     res = (
-                        supabase.table("Demandes_acces")
+                        supabase_admin.table("Demandes_acces")
                         .insert(donnees_demande)
                         .execute()
                     )

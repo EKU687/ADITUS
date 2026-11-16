@@ -9,7 +9,7 @@ import streamlit as st
 # --- Métadonnées de l'Application ---
 APP_TITLE = "ADITUS - Portail GNC-PASS"
 APP_ICON = "🏢"
-APP_VERSION = "v1.1.0"
+APP_VERSION = "v1.1.1"
 APP_AUTHOR = "Éric KUTER"
 APP_ORGANIZATION = "Gouvernement de la Nouvelle-Calédonie"
 APP_RELEASE_DATE = "2026"

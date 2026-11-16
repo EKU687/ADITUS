@@ -6,7 +6,7 @@ Affiche les autorisations en cours de validité pour l'utilisateur connecté.
 import datetime
 from zoneinfo import ZoneInfo
 import streamlit as st
-from services.db import supabase
+from services.db import supabase_admin
 
 
 def obtenir_date_nc() -> str:
@@ -27,7 +27,7 @@ def afficher_onglet_acces_actifs():
     try:
         # Recherche robuste : ilike pour l'e-mail (ignore majuscules/minuscules)
         req = (
-            supabase.table("Demandes_acces")
+            supabase_admin.table("Demandes_acces")
             .select("*")
             .eq("statut", "Validé")
             .ilike("email_demandeur", email_user)

@@ -5,7 +5,7 @@ Affiche l'ensemble des demandes soumises par l'utilisateur connecté.
 
 import pandas as pd
 import streamlit as st
-from services.db import supabase
+from services.db import supabase_admin
 
 
 def afficher_onglet_historique():
@@ -16,7 +16,7 @@ def afficher_onglet_historique():
 
     try:
         req = (
-            supabase.table("Demandes_acces")
+            supabase_admin.table("Demandes_acces")
             .select("*")
             .ilike("email_demandeur", email_user)
             .order("created_at", desc=True)
